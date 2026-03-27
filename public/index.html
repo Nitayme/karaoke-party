@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>קריוקי 🎤</title>
+  <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=Noto+Sans+Hebrew:wght@400;600&display=swap" rel="stylesheet">
+</head>
+<body class="guest-page">
+
+  <div class="guest-container">
+
+    <!-- Header -->
+    <header class="guest-header">
+      <div class="logo">🎤 <span>KARAOKE</span></div>
+    </header>
+
+    <!-- Name screen -->
+    <div id="name-screen" class="screen active">
+      <div class="screen-content">
+        <h1 class="big-title">ברוך הבא!</h1>
+        <p class="subtitle">מה קוראים לך?</p>
+        <input type="text" id="name-input" class="neon-input" placeholder="השם שלך..." maxlength="20">
+        <button class="neon-btn" id="name-btn" onclick="submitName()">בוא נתחיל 🎶</button>
+      </div>
+    </div>
+
+    <!-- Search screen -->
+    <div id="search-screen" class="screen">
+      <div class="screen-content">
+        <p class="greeting" id="greeting-text"></p>
+        <h2 class="section-title">חפש שיר</h2>
+        <div class="search-bar">
+          <input type="text" id="search-input" class="neon-input" placeholder="שם שיר או אמן...">
+          <button class="neon-btn icon-btn" onclick="searchSongs()">🔍</button>
+        </div>
+
+        <div id="search-results" class="results-list"></div>
+
+        <!-- Queue position feedback -->
+        <div id="added-feedback" class="feedback-toast hidden">
+          ✅ השיר שלך נוסף לתור!<br>
+          <span id="queue-position"></span>
+        </div>
+
+        <!-- Mini queue view -->
+        <div id="mini-queue" class="mini-queue">
+          <h3 class="mini-queue-title">התור הנוכחי</h3>
+          <div id="mini-queue-list"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="client.js"></script>
+  <script>
+    let userName = '';
+
+    function submitName() {
+      const val = document.getElementById('name-input').value.trim();
+      if (!val) return;
+      userName = val;
+      document.getElementById('greeting-text').textContent = `היי ${userName}! 👋`;
+      document.getElementById('name-screen').classList.remove('active');
+      document.getElementById('search-screen').classList.add('active');
+    }
+
+    document.getElementById('name-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') submitName();
+    });
+
+    document.getElementById('search-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') searchSongs();
+    });
+
+    function searchSongs() {
+      const query = document.getElementById('search-input').value.trim();
+      if (!query) return;
+      const resultsEl = document.getElementById('search-results');
+      resultsEl.innerHTML = '<div class="loading">🔍 מחפש...</div>';
+
+      // Build YouTube search embed results using invidious-style or direct search link
+      // We use a known karaoke video search approach
+      const searchQuery = encodeURIComponent(query + ' karaoke');
+      
+      // We'll use YouTube's oembed + a known list of video IDs from search
+      // Since we can't call YouTube API without key, we show a "search on YouTube" helper
+      // and let user paste/select from a curated embed approach
+      fetchYouTubeResults(query, resultsEl);
+    }
+
+    function fetchYouTubeResults(query, container) {
+      // Use Invidious public API (no key needed) to search YouTube
+      const invidiousUrl = `https://inv.nadeko.net/api/v1/search?q=${encodeURIComponent(query + ' karaoke')}&type=video&fields=videoId,title,author`;
+      
+      fetch(invidiousUrl)
+        .then(r => r.json())
+        .then(data => {
+          container.innerHTML = '';
+          if (!data || data.length === 0) {
+            container.innerHTML = '<div class="no-results">לא נמצאו תוצאות 😕</div>';
+            return;
+          }
+          data.slice(0, 6).forEach(video => {
+            const card = document.createElement('div');
+            card.className = 'result-card';
+            card.innerHTML = `
+              <div class="result-thumb">
+                <img src="https://i.ytimg.com/vi/${video.videoId}/mqdefault.jpg" alt="${video.title}" loading="lazy">
+                <div class="play-overlay">▶</div>
+              </div>
+              <div class="result-info">
+                <div class="result-title">${video.title}</div>
+                <div class="result-author">${video.author}</div>
+              </div>
+              <button class="add-btn" onclick="addSong('${video.videoId}', \`${video.title.replace(/`/g, "'")}\`)">+ הוסף</button>
+            `;
+            container.appendChild(card);
+          });
+        })
+        .catch(() => {
+          // Fallback: manual entry
+          container.innerHTML = `
+            <div class="fallback-search">
+              <p>לא ניתן לטעון תוצאות אוטומטית.</p>
+              <p>חפש ב-<a href="https://www.youtube.com/results?search_query=${encodeURIComponent(query + ' karaoke')}" target="_blank">YouTube</a>, העתק את ה-ID מהקישור והדבק כאן:</p>
+              <input type="text" id="manual-id" class="neon-input" placeholder="youtube.com/watch?v=XXXXX">
+              <button class="neon-btn" onclick="addManual('${query}')">הוסף ידנית</button>
+            </div>
+          `;
+        });
+    }
+
+    function addManual(title) {
+      const val = document.getElementById('manual-id').value.trim();
+      const match = val.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+      if (!match) { alert('קישור לא תקין'); return; }
+      addSong(match[1], title + ' (karaoke)');
+    }
+
+    function addSong(videoId, title) {
+      socket.emit('add_song', { videoId, title, addedBy: userName });
+      showFeedback();
+    }
+
+    function showFeedback() {
+      const fb = document.getElementById('added-feedback');
+      fb.classList.remove('hidden');
+      setTimeout(() => fb.classList.add('hidden'), 3000);
+    }
+
+    // Update mini queue from socket state
+    socket.on('state', ({ queue, currentIndex }) => {
+      const list = document.getElementById('mini-queue-list');
+      const pos = document.getElementById('queue-position');
+      
+      if (!queue || queue.length === 0) {
+        list.innerHTML = '<div class="empty-queue">התור ריק</div>';
+        return;
+      }
+
+      list.innerHTML = queue.map((s, i) => `
+        <div class="mini-queue-item ${i === currentIndex ? 'now-playing' : ''}">
+          <span class="q-num">${i + 1}</span>
+          <span class="q-title">${s.title}</span>
+          <span class="q-by">${s.addedBy}</span>
+          ${i === currentIndex ? '<span class="now-badge">▶ עכשיו</span>' : ''}
+        </div>
+      `).join('');
+
+      // Update position for last added
+      const myLastSong = [...queue].reverse().find(s => s.addedBy === userName);
+      if (myLastSong) {
+        const idx = queue.indexOf(myLastSong);
+        pos.textContent = idx === currentIndex ? 'השיר שלך מתנגן עכשיו! 🎤' : `השיר שלך במקום ${idx + 1} בתור`;
+      }
+    });
+  </script>
+</body>
+</html>

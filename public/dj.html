@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DJ מסך 🎛️</title>
+  <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=Noto+Sans+Hebrew:wght@400;600&display=swap" rel="stylesheet">
+</head>
+<body class="dj-page">
+
+  <div class="dj-layout">
+
+    <!-- Left: Player -->
+    <div class="player-section">
+      <div class="now-playing-label">▶ מתנגן עכשיו</div>
+      <div id="now-playing-title" class="now-playing-title">בחר שיר מהתור</div>
+      <div id="now-playing-by" class="now-playing-by"></div>
+
+      <div class="video-wrapper" id="video-wrapper">
+        <div id="player-placeholder" class="player-placeholder">
+          <div class="placeholder-icon">🎤</div>
+          <div class="placeholder-text">לחץ על שיר בתור כדי להתחיל</div>
+        </div>
+        <div id="yt-player"></div>
+      </div>
+
+      <!-- Controls -->
+      <div class="player-controls">
+        <button class="ctrl-btn" onclick="prevSong()" title="הקודם">⏮</button>
+        <button class="ctrl-btn big" id="play-pause-btn" onclick="togglePlay()">▶</button>
+        <button class="ctrl-btn" onclick="nextSong()" title="הבא">⏭</button>
+        <button class="ctrl-btn fullscreen-btn" onclick="toggleFullscreen()" title="מסך מלא">⛶</button>
+      </div>
+    </div>
+
+    <!-- Right: Queue -->
+    <div class="queue-section">
+      <div class="queue-header">
+        <h2 class="queue-title">🎵 תור השירים</h2>
+        <span id="queue-count" class="queue-count">0 שירים</span>
+      </div>
+      <div id="dj-queue-list" class="dj-queue-list">
+        <div class="empty-state">
+          <div class="empty-icon">🎤</div>
+          <p>עדיין אין שירים בתור</p>
+          <p class="empty-sub">שתף את הקישור עם האורחים!</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Fullscreen overlay -->
+  <div id="fullscreen-overlay" class="fullscreen-overlay hidden">
+    <div id="fs-player"></div>
+    <div class="fs-controls">
+      <div class="fs-song-info">
+        <div id="fs-title"></div>
+        <div id="fs-by"></div>
+      </div>
+      <div class="fs-btns">
+        <button class="ctrl-btn" onclick="prevSong()">⏮</button>
+        <button class="ctrl-btn big" id="fs-play-btn" onclick="togglePlay()">⏸</button>
+        <button class="ctrl-btn" onclick="nextSong()">⏭</button>
+        <button class="ctrl-btn" onclick="toggleFullscreen()">✕</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script src="client.js"></script>
+  <script>
+    let player = null;
+    let playerReady = false;
+    let isFullscreen = false;
+    let lastVideoId = null;
+    let localState = { queue: [], currentIndex: -1, isPlaying: false };
+
+    // YouTube IFrame API ready
+    function onYouTubeIframeAPIReady() {
+      player = new YT.Player('yt-player', {
+        height: '100%',
+        width: '100%',
+        playerVars: {
+          autoplay: 0,
+          controls: 1,
+          rel: 0,
+          modestbranding: 1,
+          iv_load_policy: 3,
+        },
+        events: {
+          onReady: () => { playerReady = true; },
+          onStateChange: onPlayerStateChange
+        }
+      });
+    }
+
+    function onPlayerStateChange(event) {
+      if (event.data === YT.PlayerState.ENDED) {
+        socket.emit('song_ended');
+      }
+      const isPlaying = event.data === YT.PlayerState.PLAYING;
+      document.getElementById('play-pause-btn').textContent = isPlaying ? '⏸' : '▶';
+      document.getElementById('fs-play-btn').textContent = isPlaying ? '⏸' : '▶';
+    }
+
+    function loadVideo(videoId, autoplay) {
+      if (!playerReady || !player) return;
+      document.getElementById('player-placeholder').style.display = 'none';
+      if (autoplay) {
+        player.loadVideoById(videoId);
+      } else {
+        player.cueVideoById(videoId);
+      }
+      lastVideoId = videoId;
+    }
+
+    // Socket state updates
+    socket.on('state', (state) => {
+      localState = state;
+      renderQueue(state);
+      
+      if (state.queue.length === 0 || state.currentIndex < 0) return;
+      
+      const current = state.queue[state.currentIndex];
+      document.getElementById('now-playing-title').textContent = current.title;
+      document.getElementById('now-playing-by').textContent = `🎤 ${current.addedBy}`;
+      document.getElementById('fs-title').textContent = current.title;
+      document.getElementById('fs-by').textContent = `🎤 ${current.addedBy}`;
+
+      if (current.videoId !== lastVideoId) {
+        loadVideo(current.videoId, state.isPlaying);
+      } else if (state.isPlaying && playerReady) {
+        player.playVideo();
+      } else if (!state.isPlaying && playerReady) {
+        player.pauseVideo();
+      }
+    });
+
+    function renderQueue(state) {
+      const list = document.getElementById('dj-queue-list');
+      const count = document.getElementById('queue-count');
+      
+      if (!state.queue || state.queue.length === 0) {
+        count.textContent = '0 שירים';
+        list.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">🎤</div>
+            <p>עדיין אין שירים בתור</p>
+            <p class="empty-sub">שתף את הקישור עם האורחים!</p>
+          </div>`;
+        return;
+      }
+
+      count.textContent = `${state.queue.length} שירים`;
+      list.innerHTML = state.queue.map((song, i) => `
+        <div class="queue-item ${i === state.currentIndex ? 'active' : ''}" onclick="playIndex(${i})">
+          <div class="queue-item-num">${i === state.currentIndex ? '▶' : i + 1}</div>
+          <div class="queue-item-info">
+            <div class="queue-item-title">${song.title}</div>
+            <div class="queue-item-by">👤 ${song.addedBy}</div>
+          </div>
+          <button class="remove-btn" onclick="removeSong(event, ${i})">✕</button>
+        </div>
+      `).join('');
+    }
+
+    function togglePlay() {
+      if (!playerReady) return;
+      const state = player.getPlayerState();
+      if (state === YT.PlayerState.PLAYING) {
+        player.pauseVideo();
+        socket.emit('pause');
+      } else {
+        player.playVideo();
+        socket.emit('play');
+      }
+    }
+
+    function nextSong() { socket.emit('next'); }
+    function prevSong() { socket.emit('prev'); }
+    function playIndex(i) { socket.emit('play_index', i); }
+    function removeSong(e, i) { e.stopPropagation(); socket.emit('remove_song', i); }
+
+    function toggleFullscreen() {
+      const overlay = document.getElementById('fullscreen-overlay');
+      isFullscreen = !isFullscreen;
+      overlay.classList.toggle('hidden', !isFullscreen);
+      if (isFullscreen) {
+        // Move player to fullscreen overlay
+        const fsPlayer = document.getElementById('fs-player');
+        if (player && playerReady) {
+          const iframe = document.querySelector('#yt-player iframe');
+          if (iframe) fsPlayer.appendChild(iframe);
+        }
+      } else {
+        const ytDiv = document.getElementById('yt-player');
+        const iframe = document.querySelector('#fs-player iframe');
+        if (iframe) ytDiv.appendChild(iframe);
+      }
+    }
+  </script>
+</body>
+</html>
