@@ -79,6 +79,30 @@ io.on('connection', (socket) => {
     broadcastState();
   });
 
+  socket.on('reorder', ({ from, to }) => {
+    // Don't allow moving the currently playing song
+    if (from === currentIndex) return;
+    const song = queue.splice(from, 1)[0];
+    queue.splice(to, 0, song);
+    // Fix currentIndex after reorder
+    if (from < currentIndex && to >= currentIndex) currentIndex--;
+    else if (from > currentIndex && to <= currentIndex) currentIndex++;
+    broadcastState();
+  });
+
+  socket.on('shuffle', () => {
+    // Only shuffle songs after the current one
+    if (currentIndex >= queue.length - 1) return;
+    const played = queue.slice(0, currentIndex + 1);
+    const upcoming = queue.slice(currentIndex + 1);
+    for (let i = upcoming.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [upcoming[i], upcoming[j]] = [upcoming[j], upcoming[i]];
+    }
+    queue = [...played, ...upcoming];
+    broadcastState();
+  });
+
   socket.on('song_ended', () => {
     if (currentIndex < queue.length - 1) { currentIndex++; isPlaying = true; }
     else { isPlaying = false; }

@@ -44,7 +44,10 @@
     <div class="queue-section">
       <div class="queue-header">
         <h2 class="queue-title">🎵 תור השירים</h2>
-        <span id="queue-count" class="queue-count">0 שירים</span>
+        <div class="queue-header-actions">
+          <button class="shuffle-btn" onclick="shuffleQueue()" title="ערבב תור">🔀</button>
+          <span id="queue-count" class="queue-count">0 שירים</span>
+        </div>
       </div>
       <div id="dj-queue-list" class="dj-queue-list">
         <div class="empty-state">
@@ -177,7 +180,15 @@
 
       count.textContent = `${state.queue.length} שירים`;
       list.innerHTML = state.queue.map((song, i) => `
-        <div class="queue-item ${i === state.currentIndex ? 'active' : ''}" onclick="playIndex(${i})">
+        <div class="queue-item ${i === state.currentIndex ? 'active' : ''}"
+             draggable="${i !== state.currentIndex}"
+             data-index="${i}"
+             onclick="playIndex(${i})"
+             ondragstart="onDragStart(event, ${i})"
+             ondragover="onDragOver(event)"
+             ondrop="onDrop(event, ${i})"
+             ondragleave="onDragLeave(event)">
+          <div class="drag-handle ${i === state.currentIndex ? 'hidden' : ''}">⠿</div>
           <div class="queue-item-num">${i === state.currentIndex ? '▶' : i + 1}</div>
           <div class="queue-item-info">
             <div class="queue-item-title">${song.title}</div>
@@ -186,6 +197,37 @@
           <button class="remove-btn" onclick="removeSong(event, ${i})">✕</button>
         </div>
       `).join('');
+    }
+
+    // Drag and drop
+    let dragFromIndex = null;
+
+    function onDragStart(event, index) {
+      dragFromIndex = index;
+      event.dataTransfer.effectAllowed = 'move';
+      setTimeout(() => event.target.classList.add('dragging'), 0);
+    }
+
+    function onDragOver(event) {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      event.currentTarget.classList.add('drag-over');
+    }
+
+    function onDragLeave(event) {
+      event.currentTarget.classList.remove('drag-over');
+    }
+
+    function onDrop(event, toIndex) {
+      event.preventDefault();
+      event.currentTarget.classList.remove('drag-over');
+      if (dragFromIndex === null || dragFromIndex === toIndex) return;
+      socket.emit('reorder', { from: dragFromIndex, to: toIndex });
+      dragFromIndex = null;
+    }
+
+    function shuffleQueue() {
+      socket.emit('shuffle');
     }
 
     function togglePlay() {

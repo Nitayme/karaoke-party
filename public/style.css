@@ -618,7 +618,53 @@ body::before {
 }
 
 .queue-item:hover .remove-btn { opacity: 1; }
-.remove-btn:hover { color: var(--neon-pink); background: rgba(255, 45, 120, 0.1); }
+.queue-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shuffle-btn {
+  background: var(--bg3);
+  border: 1.5px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.shuffle-btn:hover {
+  border-color: var(--neon-cyan);
+  color: var(--neon-cyan);
+  box-shadow: var(--active-glow);
+}
+
+.drag-handle {
+  color: var(--text-muted);
+  font-size: 1rem;
+  cursor: grab;
+  padding: 0 4px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.drag-handle.hidden { display: none; }
+
+.queue-item:hover .drag-handle { opacity: 1; }
+
+.queue-item.dragging {
+  opacity: 0.4;
+}
+
+.queue-item.drag-over {
+  border-top: 2px solid var(--neon-cyan);
+}
 
 /* Empty state */
 .empty-state {
