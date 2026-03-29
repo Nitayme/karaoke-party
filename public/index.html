@@ -8,10 +8,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=Noto+Sans+Hebrew:wght@400;600&display=swap" rel="stylesheet">
 </head>
 <body class="guest-page">
-
   <div class="guest-container">
-
-    <!-- Header -->
     <header class="guest-header">
       <div class="logo">🎤 <span>KARAOKE</span></div>
     </header>
@@ -22,7 +19,7 @@
         <h1 class="big-title">ברוך הבא!</h1>
         <p class="subtitle">מה קוראים לך?</p>
         <input type="text" id="name-input" class="neon-input" placeholder="השם שלך..." maxlength="20">
-        <button class="neon-btn" id="name-btn" onclick="submitName()">בוא נתחיל 🎶</button>
+        <button class="neon-btn" onclick="submitName()">בוא נתחיל 🎶</button>
       </div>
     </div>
 
@@ -38,20 +35,17 @@
 
         <div id="search-results" class="results-list"></div>
 
-        <!-- Queue position feedback -->
         <div id="added-feedback" class="feedback-toast hidden">
-          ✅ השיר שלך נוסף לתור!<br>
+          ✅ השיר נוסף לתור!<br>
           <span id="queue-position"></span>
         </div>
 
-        <!-- Mini queue view -->
         <div id="mini-queue" class="mini-queue">
           <h3 class="mini-queue-title">התור הנוכחי</h3>
           <div id="mini-queue-list"></div>
         </div>
       </div>
     </div>
-
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
@@ -76,72 +70,45 @@
       if (e.key === 'Enter') searchSongs();
     });
 
-    function searchSongs() {
+    async function searchSongs() {
       const query = document.getElementById('search-input').value.trim();
       if (!query) return;
-      const resultsEl = document.getElementById('search-results');
-      resultsEl.innerHTML = '<div class="loading">🔍 מחפש...</div>';
+      const container = document.getElementById('search-results');
+      container.innerHTML = '<div class="loading">🔍 מחפש...</div>';
 
-      // Build YouTube search embed results using invidious-style or direct search link
-      // We use a known karaoke video search approach
-      const searchQuery = encodeURIComponent(query + ' karaoke');
-      
-      // We'll use YouTube's oembed + a known list of video IDs from search
-      // Since we can't call YouTube API without key, we show a "search on YouTube" helper
-      // and let user paste/select from a curated embed approach
-      fetchYouTubeResults(query, resultsEl);
-    }
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+        const data = await res.json();
 
-    function fetchYouTubeResults(query, container) {
-      // Use Invidious public API (no key needed) to search YouTube
-      const invidiousUrl = `https://inv.nadeko.net/api/v1/search?q=${encodeURIComponent(query + ' karaoke')}&type=video&fields=videoId,title,author`;
-      
-      fetch(invidiousUrl)
-        .then(r => r.json())
-        .then(data => {
-          container.innerHTML = '';
-          if (!data || data.length === 0) {
-            container.innerHTML = '<div class="no-results">לא נמצאו תוצאות 😕</div>';
-            return;
-          }
-          data.slice(0, 6).forEach(video => {
-            const card = document.createElement('div');
-            card.className = 'result-card';
-            card.innerHTML = `
-              <div class="result-thumb">
-                <img src="https://i.ytimg.com/vi/${video.videoId}/mqdefault.jpg" alt="${video.title}" loading="lazy">
-                <div class="play-overlay">▶</div>
-              </div>
-              <div class="result-info">
-                <div class="result-title">${video.title}</div>
-                <div class="result-author">${video.author}</div>
-              </div>
-              <button class="add-btn" onclick="addSong('${video.videoId}', \`${video.title.replace(/`/g, "'")}\`)">+ הוסף</button>
-            `;
-            container.appendChild(card);
-          });
-        })
-        .catch(() => {
-          // Fallback: manual entry
-          container.innerHTML = `
-            <div class="fallback-search">
-              <p>לא ניתן לטעון תוצאות אוטומטית.</p>
-              <p>חפש ב-<a href="https://www.youtube.com/results?search_query=${encodeURIComponent(query + ' karaoke')}" target="_blank">YouTube</a>, העתק את ה-ID מהקישור והדבק כאן:</p>
-              <input type="text" id="manual-id" class="neon-input" placeholder="youtube.com/watch?v=XXXXX">
-              <button class="neon-btn" onclick="addManual('${query}')">הוסף ידנית</button>
+        if (!data.results || data.results.length === 0) {
+          container.innerHTML = '<div class="no-results">לא נמצאו תוצאות 😕</div>';
+          return;
+        }
+
+        container.innerHTML = '';
+        data.results.forEach(video => {
+          const card = document.createElement('div');
+          card.className = 'result-card';
+          card.innerHTML = `
+            <div class="result-thumb">
+              <img src="${video.thumbnail}" alt="${video.title}" loading="lazy">
+              <div class="play-overlay">▶</div>
             </div>
+            <div class="result-info">
+              <div class="result-title">${video.title}</div>
+              <div class="result-author">${video.channel}</div>
+            </div>
+            <button class="add-btn" onclick="addSong('${video.videoId}', \`${video.title.replace(/`/g, "'")}\`)">+ הוסף</button>
           `;
+          container.appendChild(card);
         });
-    }
-
-    function addManual(title) {
-      const val = document.getElementById('manual-id').value.trim();
-      const match = val.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
-      if (!match) { alert('קישור לא תקין'); return; }
-      addSong(match[1], title + ' (karaoke)');
+      } catch (err) {
+        container.innerHTML = '<div class="no-results">שגיאה בחיפוש, נסה שוב 😕</div>';
+      }
     }
 
     function addSong(videoId, title) {
+      // title comes directly from YouTube, not from user input
       socket.emit('add_song', { videoId, title, addedBy: userName });
       showFeedback();
     }
@@ -152,11 +119,10 @@
       setTimeout(() => fb.classList.add('hidden'), 3000);
     }
 
-    // Update mini queue from socket state
     socket.on('state', ({ queue, currentIndex }) => {
       const list = document.getElementById('mini-queue-list');
       const pos = document.getElementById('queue-position');
-      
+
       if (!queue || queue.length === 0) {
         list.innerHTML = '<div class="empty-queue">התור ריק</div>';
         return;
@@ -164,14 +130,13 @@
 
       list.innerHTML = queue.map((s, i) => `
         <div class="mini-queue-item ${i === currentIndex ? 'now-playing' : ''}">
-          <span class="q-num">${i + 1}</span>
+          <span class="q-num">${i === currentIndex ? '▶' : i + 1}</span>
           <span class="q-title">${s.title}</span>
           <span class="q-by">${s.addedBy}</span>
-          ${i === currentIndex ? '<span class="now-badge">▶ עכשיו</span>' : ''}
+          ${i === currentIndex ? '<span class="now-badge">עכשיו</span>' : ''}
         </div>
       `).join('');
 
-      // Update position for last added
       const myLastSong = [...queue].reverse().find(s => s.addedBy === userName);
       if (myLastSong) {
         const idx = queue.indexOf(myLastSong);

@@ -9,6 +9,34 @@ const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+// YouTube Search API endpoint
+app.get('/api/search', async (req, res) => {
+  const query = req.query.q;
+  const apiKey = process.env.YOUTUBE_API_KEY;
+
+  if (!apiKey) return res.status(500).json({ error: 'Missing YouTube API key' });
+
+  try {
+    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoEmbeddable=true&q=${encodeURIComponent(query + ' karaoke')}&key=${apiKey}&maxResults=8`;
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (!data.items) return res.json({ results: [] });
+
+    const results = data.items.map(item => ({
+      videoId: item.id.videoId,
+      title: item.snippet.title,
+      channel: item.snippet.channelTitle,
+      thumbnail: item.snippet.thumbnails.medium.url
+    }));
+
+    res.json({ results });
+  } catch (err) {
+    console.error('YouTube search error:', err);
+    res.status(500).json({ error: 'Search failed' });
+  }
+});
+
 // State
 let queue = [];
 let currentIndex = -1;
@@ -19,50 +47,29 @@ function broadcastState() {
 }
 
 io.on('connection', (socket) => {
-  // Send current state to new connection
   socket.emit('state', { queue, currentIndex, isPlaying });
 
-  // Guest adds a song
   socket.on('add_song', (song) => {
-    // song: { title, videoId, addedBy }
     queue.push({ ...song, id: Date.now() });
-    // If nothing is playing, start from first song
     if (currentIndex === -1) currentIndex = 0;
     broadcastState();
   });
 
-  // DJ controls
-  socket.on('play', () => {
-    isPlaying = true;
-    broadcastState();
-  });
-
-  socket.on('pause', () => {
-    isPlaying = false;
-    broadcastState();
-  });
+  socket.on('play', () => { isPlaying = true; broadcastState(); });
+  socket.on('pause', () => { isPlaying = false; broadcastState(); });
 
   socket.on('next', () => {
-    if (currentIndex < queue.length - 1) {
-      currentIndex++;
-      isPlaying = true;
-    }
+    if (currentIndex < queue.length - 1) { currentIndex++; isPlaying = true; }
     broadcastState();
   });
 
   socket.on('prev', () => {
-    if (currentIndex > 0) {
-      currentIndex--;
-      isPlaying = true;
-    }
+    if (currentIndex > 0) { currentIndex--; isPlaying = true; }
     broadcastState();
   });
 
   socket.on('play_index', (index) => {
-    if (index >= 0 && index < queue.length) {
-      currentIndex = index;
-      isPlaying = true;
-    }
+    if (index >= 0 && index < queue.length) { currentIndex = index; isPlaying = true; }
     broadcastState();
   });
 
@@ -73,12 +80,8 @@ io.on('connection', (socket) => {
   });
 
   socket.on('song_ended', () => {
-    if (currentIndex < queue.length - 1) {
-      currentIndex++;
-      isPlaying = true;
-    } else {
-      isPlaying = false;
-    }
+    if (currentIndex < queue.length - 1) { currentIndex++; isPlaying = true; }
+    else { isPlaying = false; }
     broadcastState();
   });
 });
