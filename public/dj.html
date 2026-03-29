@@ -81,6 +81,7 @@
     let playerReady = false;
     let isFullscreen = false;
     let lastVideoId = null;
+    let pendingState = null;
 
     function copyGuestLink() {
       const guestUrl = window.location.origin;
@@ -106,7 +107,14 @@
         width: '100%',
         playerVars: { autoplay: 0, controls: 1, rel: 0, modestbranding: 1, iv_load_policy: 3 },
         events: {
-          onReady: () => { playerReady = true; },
+          onReady: () => {
+            playerReady = true;
+            // Apply any state that arrived before player was ready
+            if (pendingState) {
+              applyState(pendingState);
+              pendingState = null;
+            }
+          },
           onStateChange: onPlayerStateChange
         }
       });
@@ -127,10 +135,8 @@
       lastVideoId = videoId;
     }
 
-    socket.on('state', (state) => {
-      renderQueue(state);
+    function applyState(state) {
       if (state.queue.length === 0 || state.currentIndex < 0) return;
-
       const current = state.queue[state.currentIndex];
       document.getElementById('now-playing-title').textContent = current.title;
       document.getElementById('now-playing-by').textContent = `🎤 ${current.addedBy}`;
@@ -144,6 +150,15 @@
       } else if (!state.isPlaying && playerReady) {
         player.pauseVideo();
       }
+    }
+
+    socket.on('state', (state) => {
+      renderQueue(state);
+      if (!playerReady) {
+        pendingState = state;
+        return;
+      }
+      applyState(state);
     });
 
     function renderQueue(state) {
